@@ -75,7 +75,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate text prompts for videos")
     parser.add_argument("--num-frames", type=int, default=10, help="get key frames from video")
     parser.add_argument("--max_new_tokens", type=int, default=128, help="maximum tokens to generate")
-    parser.add_argument("--prompt-for-VLM", type=str, default="USER: <video>\nDescribewhat is visually observable in the video frame by frame. Do **not** include any subjective interpretation or inferred actions. Include elements such as nearby vehicles, lane markings, road structure, environment, and weather. ASSISTANT:", help="prompt for VLM to describe the video")
+    parser.add_argument("--prompt-for-VLM", type=str, default="USER: <video>\nDescribe what is visually observable in the video frame by frame. Do **not** include any subjective interpretation or inferred actions. Include elements such as nearby vehicles, lane markings, road structure, environment, and weather. ASSISTANT:", help="prompt for VLM to describe the video")
     parser.add_argument("--video-dir", type=str, default="./videos", help="input video directory path")
     parser.add_argument("--output-dir", type=str, default="./prompt", help="output .json directory path")
 
