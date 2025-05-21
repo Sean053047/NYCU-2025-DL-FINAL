@@ -78,10 +78,10 @@ def write_video(frames, out_path, fps):
     seen_hash = set()
     for fpath, _ in frames:
         buf = open(fpath, 'rb').read()
-        md5 = hashlib.md5(buf).digest()
-        if md5 in seen_hash:                 # 完全相同畫面就跳過
-            continue
-        seen_hash.add(md5)
+        # md5 = hashlib.md5(buf).digest()
+        # if md5 in seen_hash:                 # 完全相同畫面就跳過
+        #     continue
+        # seen_hash.add(md5)
         img = cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)
         img = cv2.resize(img, (w, h))      # resize to 832x480
         vw.write(img)

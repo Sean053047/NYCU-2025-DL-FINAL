@@ -67,7 +67,7 @@ class BaseClass(Dataset):
         
         self.length = 0
         
-        self.controlnet_processor = init_controlnet(controlnet_type)
+        # self.controlnet_processor = init_controlnet(controlnet_type)
         
     def __len__(self):
         return self.length
@@ -151,3 +151,49 @@ class OpenvidControlnetDataset(BaseClass):
         video_path = os.path.join(self.video_root_dir, video_name)
         pixel_values, controlnet_video = self.load_video_info(video_path)
         return pixel_values, caption, controlnet_video
+    
+class TrucksceneControlnetDataset(BaseClass):
+    def __init__(self, csv_path, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.df = pd.read_csv(csv_path)
+        # self.df['checked'] = self.df['path'].map(lambda x: int(os.path.exists(os.path.join(self.video_root_dir, x))))
+        # self.df = self.df[self.df['checked'] == True]
+        self.length = self.df.shape[0]
+        
+    def get_batch(self, idx):
+        item = self.df.iloc[idx]
+        caption = item['prompt']
+        video_name = item['name']
+        pixel_values, controlnet_video = self.load_video_info(video_name)
+        return pixel_values, caption, controlnet_video
+    
+    def load_video_info(self, video_name):
+        video_reader = VideoReader(os.path.join(self.video_root_dir, 'cam_video', video_name))
+        fps_original = video_reader.get_avg_fps()
+        video_length = len(video_reader)
+        
+        sample_stride = random.randint(self.stride_min, self.stride_max)
+        clip_length = min(video_length, (self.sample_n_frames - 1) * sample_stride + 1)
+        start_idx   = random.randint(0, video_length - clip_length)
+        batch_index = np.linspace(start_idx, start_idx + clip_length - 1, self.sample_n_frames, dtype=int)
+        np_video = video_reader.get_batch(batch_index).asnumpy()
+        pixel_values = torch.from_numpy(np_video).permute(0, 3, 1, 2).contiguous()
+        pixel_values = pixel_values / 127.5 - 1
+        del video_reader
+        
+        # video_reader = VideoReader(os.path.join(self.video_root_dir, 'lidar_video', video_name))
+        # fps_original = video_reader.get_avg_fps()
+        # video_length = len(video_reader)
+        
+        # sample_stride = random.randint(self.stride_min, self.stride_max)
+        # clip_length = min(video_length, (self.sample_n_frames - 1) * sample_stride + 1)
+        # start_idx   = random.randint(0, video_length - clip_length)
+        # batch_index = np.linspace(start_idx, start_idx + clip_length - 1, self.sample_n_frames, dtype=int)
+        # np_video = video_reader.get_batch(batch_index).asnumpy()
+        # pixel_values = torch.from_numpy(np_video).permute(0, 3, 1, 2).contiguous()
+        # pixel_values = pixel_values / 127.5 - 1
+        # del video_reader
+
+        
+        # return pixel_values, controlnet_video
+        return pixel_values, pixel_values.clone()

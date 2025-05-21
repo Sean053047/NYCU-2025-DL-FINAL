@@ -29,8 +29,8 @@ def extract_frames(video_path, num_frames):
 def load_videollava(model_id="LanguageBind/Video-LLaVA-7B-hf"):
     print(f"Loading Video-LLaVA model: {model_id}")
     model = VideoLlavaForConditionalGeneration.from_pretrained(
-        model_id, torch_dtype=torch.float16, device_map="auto"
-    )
+        model_id, torch_dtype=torch.float16
+    ).to("cuda")
     processor = VideoLlavaProcessor.from_pretrained(model_id)
     return model, processor
 
@@ -75,7 +75,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate text prompts for videos")
     parser.add_argument("--num-frames", type=int, default=10, help="get key frames from video")
     parser.add_argument("--max_new_tokens", type=int, default=128, help="maximum tokens to generate")
-    parser.add_argument("--prompt-for-VLM", type=str, default="USER: <video>\nDescribe what is visually observable in the video frame by frame. Do **not** include any subjective interpretation or inferred actions. Include elements such as nearby vehicles, lane markings, road structure, environment, and weather. ASSISTANT:", help="prompt for VLM to describe the video")
+    # parser.add_argument("--prompt-for-VLM", type=str, default="USER: <video>\nDescribe what is visually observable in the video frame by frame. Do **not** include any subjective interpretation or inferred actions. Do **not** include any irrelevant information such as \"In the video...\", \"The video shows...\". Include the elements such as perspective direction of the camera, nearby vehicles, lane markings, road structure, environment, and weather. ASSISTANT:", help="prompt for VLM to describe the video")
+    parser.add_argument("--prompt-for-VLM", type=str, default="USER: <video>\nDescribe the video in detail, specifying the direction in which the car is traveling (e.g. moving forward, turning left), emphasizing that it is captured from a first-person, in-car perspective, and listing all other objects and elements in the scene—such as surrounding vehicles, pedestrians, traffic signals, road signs, buildings, and environmental features. ASSISTANT:", help="prompt for VLM to describe the video")
     parser.add_argument("--video-dir", type=str, default="./videos", help="input video directory path")
     parser.add_argument("--output-dir", type=str, default="./prompt", help="output .json directory path")
 

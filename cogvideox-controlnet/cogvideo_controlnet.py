@@ -123,8 +123,8 @@ class CogVideoXControlnet(ModelMixin, ConfigMixin, PeftAdapterMixin):
             
         self.gradient_checkpointing = False
         
-    def _set_gradient_checkpointing(self, module, value=False):
-        self.gradient_checkpointing = value
+    # def _set_gradient_checkpointing(self, module, value=False):
+    #     self.gradient_checkpointing = value
 
     def compress_time(self, x, num_frames):
         x = rearrange(x, '(b f) c h w -> b f c h w', f=num_frames)

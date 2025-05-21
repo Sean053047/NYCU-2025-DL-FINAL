@@ -50,7 +50,7 @@ from diffusers.utils import check_min_version, export_to_video, is_wandb_availab
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
 from diffusers.utils.torch_utils import is_compiled_module
 
-from controlnet_datasets import OpenvidControlnetDataset
+from controlnet_datasets import OpenvidControlnetDataset, TrucksceneControlnetDataset
 from controlnet_pipeline import ControlnetCogVideoXPipeline
 from cogvideo_transformer import CustomCogVideoXTransformer3DModel
 from cogvideo_controlnet import CogVideoXControlnet
@@ -822,7 +822,7 @@ def main(args):
             "bf16" in accelerator.state.deepspeed_plugin.deepspeed_config
             and accelerator.state.deepspeed_plugin.deepspeed_config["bf16"]["enabled"]
         ):
-            weight_dtype = torch.float16
+            weight_dtype = torch.bfloat16
     else:
         if accelerator.mixed_precision == "fp16":
             weight_dtype = torch.float16
@@ -882,7 +882,7 @@ def main(args):
     optimizer = get_optimizer(args, params_to_optimize, use_deepspeed=use_deepspeed_optimizer)
 
     # Dataset and DataLoader
-    train_dataset = OpenvidControlnetDataset(
+    train_dataset = TrucksceneControlnetDataset(
         video_root_dir=args.video_root_dir,
         csv_path=args.csv_path,
         image_size=(args.height, args.width), 

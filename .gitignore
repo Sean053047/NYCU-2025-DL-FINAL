@@ -1,0 +1,12 @@
+# for testing
+get_data.py
+video_caption.py
+download_dataset.sh
+# dataset
+man-truckscenes
+data
+# output
+prompt
+video
+# others
+__pycache__
