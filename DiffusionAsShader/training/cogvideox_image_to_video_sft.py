@@ -460,7 +460,6 @@ def main(args):
             "Mixed precision training with bfloat16 is not supported on MPS. Please use fp16 (recommended) or fp32 instead."
         )
 
-    transformer.to_empty(device='cpu')
     # text_encoder.to(accelerator.device, dtype=weight_dtype)
     # vae.to(accelerator.device, dtype=weight_dtype)
 
@@ -731,6 +730,18 @@ def main(args):
         transformer, optimizer, train_dataloader, lr_scheduler
     )
 
+    def nan_guard(name):
+        def _hook(module, inputs, output):
+            if torch.isnan(output).any() or torch.isinf(output).any():
+                print(f"\n>>> NaN appears after: {name}")
+                raise RuntimeError
+        return _hook
+
+    for n, m in transformer.named_modules():
+        # 只針對高風險層掛勾：Linear / Attention / LayerNorm
+        if isinstance(m, (torch.nn.Linear, torch.nn.MultiheadAttention, torch.nn.LayerNorm)):
+            m.register_forward_hook(nan_guard(n))
+            
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     if overrode_max_train_steps:
@@ -1031,7 +1042,12 @@ def main(args):
                 while len(weights.shape) < len(model_pred.shape):
                     weights = weights.unsqueeze(-1)
                 
-                target = video_latents
+                # target = video_latents
+                target = scheduler.get_velocity(
+                    noisy_video_latents,  # sample (x_0)
+                    noise,          # noise   (ε)
+                    timesteps
+                )
 
                 loss = torch.mean(
                     (weights * (model_pred - target) ** 2).reshape(batch_size, -1),
