@@ -15,7 +15,7 @@ accelerate launch --config_file accelerate_config.yaml \
     --caption_column "prompt" \
     --height 480 \
     --width 720 \
-    --num_tracking_blocks 4 \
+    --num_tracking_blocks 18 \
     --load_tensors \
     --mixed_precision fp16 \
     --train_batch_size 1 \
