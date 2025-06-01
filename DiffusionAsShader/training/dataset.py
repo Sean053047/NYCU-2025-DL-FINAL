@@ -473,7 +473,7 @@ class VideoDatasetWithResizingTracking(VideoDataset):
                 tracking_map = tracking_latents[0].sample().squeeze(0)
                 prompt_embeds = prompt_embeds[0].squeeze(0)
                 image_latents = image_latents[0].sample().squeeze(0) if self.image_to_video else None
-
+                print(f"Saving video latents, tracking map and prompt embeddings for {video_name}...")
                 torch.save(video_latents, os.path.join(self.data_root, "video_latents", f"{video_name}.pt"))
                 torch.save(tracking_map, os.path.join(self.data_root, "tracking_map", f"{video_name}.pt"))
                 torch.save(prompt_embeds, os.path.join(self.data_root, "prompt_embeds", f"{video_name}.pt"))

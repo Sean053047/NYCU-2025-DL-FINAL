@@ -341,6 +341,11 @@ def _get_training_args(parser: argparse.ArgumentParser) -> None:
         default=0.05,
         help="Image condition dropout probability when finetuning image-to-video.",
     )
+    parser.add_argument(
+        "--precompute_embeddings",
+        action="store_true",
+        default=False,
+    )
 
 
 def _get_optimizer_args(parser: argparse.ArgumentParser) -> None:
