@@ -2,12 +2,15 @@
 get_data.py
 video_caption.py
 download_dataset.sh
+json_to_csv.pyclear_ckpt_dir.py
 # dataset
 man-truckscenes
+truckscenes_trainval.zip
 data
 # output
 prompt
 video
+v1
 # others
 __pycache__
 cogvideox-sft

@@ -383,12 +383,14 @@ def main(args):
         args.pretrained_model_name_or_path,
         subfolder="tokenizer",
         revision=args.revision,
+        device_map="cpu",
     )
 
     text_encoder = T5EncoderModel.from_pretrained(
         args.pretrained_model_name_or_path,
         subfolder="text_encoder",
         revision=args.revision,
+        device_map="cpu",
     )
 
     # CogVideoX-2b weights are stored in float16
@@ -401,6 +403,7 @@ def main(args):
             torch_dtype=load_dtype,
             revision=args.revision,
             variant=args.variant,
+            device_map="cpu",    
         )
     else:
         transformer = CogVideoXTransformer3DModelTracking.from_pretrained(
@@ -410,6 +413,7 @@ def main(args):
             revision=args.revision,
             variant=args.variant,
             num_tracking_blocks=args.num_tracking_blocks,
+            device_map="cpu",
         )
 
     vae = AutoencoderKLCogVideoX.from_pretrained(
@@ -417,6 +421,7 @@ def main(args):
         subfolder="vae",
         revision=args.revision,
         variant=args.variant,
+        device_map="cpu",
     )
 
     scheduler = CogVideoXDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
@@ -662,26 +667,26 @@ def main(args):
     collate_fn_tracking = CollateFunctionTracking(weight_dtype, args.load_tensors)
     collate_fn_image_tracking = CollateFunctionImageTracking(weight_dtype, args.load_tensors)
     
-    
-    text_encoder.to(accelerator.device, dtype=weight_dtype)
-    vae.to(accelerator.device, dtype=weight_dtype)
-    
-    tmp_data_loader = DataLoader(
-        train_dataset,
-        batch_size=1,
-        sampler=BucketSampler(train_dataset, batch_size=args.train_batch_size, shuffle=True),
-        collate_fn=collate_fn if args.tracking_column is None else collate_fn_image_tracking,
-        num_workers=0,
-        pin_memory=False
-    )
-    tmp_data_loader = accelerator.prepare(tmp_data_loader)
-    for _ in tmp_data_loader:
-        ...
-    accelerator.wait_for_everyone()
-    del tmp_data_loader
-    
-    text_encoder.to('cpu')
-    vae.to('cpu')
+    if args.precompute_embeddings:
+        text_encoder.to(accelerator.device, dtype=weight_dtype)
+        vae.to(accelerator.device, dtype=weight_dtype)
+        
+        tmp_data_loader = DataLoader(
+            train_dataset,
+            batch_size=1,
+            sampler=BucketSampler(train_dataset, batch_size=args.train_batch_size, shuffle=True),
+            collate_fn=collate_fn if args.tracking_column is None else collate_fn_image_tracking,
+            num_workers=0,
+            pin_memory=False
+        )
+        tmp_data_loader = accelerator.prepare(tmp_data_loader)
+        for _ in tmp_data_loader:
+            ...
+        accelerator.wait_for_everyone()
+        del tmp_data_loader
+        
+        text_encoder.to('cpu')
+        vae.to('cpu')
 
     train_dataloader = DataLoader(
         train_dataset,
@@ -1067,7 +1072,7 @@ def main(args):
 
                 if not args.use_cpu_offload_optimizer:
                     lr_scheduler.step()
-
+                    
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
                 progress_bar.update(1)
@@ -1114,6 +1119,11 @@ def main(args):
 
             if global_step >= args.max_train_steps:
                 break
+            
+            del videos, images, prompts, noise, timesteps, noisy_video_latents, noisy_model_input, model_output
+            gc.collect()
+            # torch.cuda.empty_cache()
+            # torch.cuda.ipc_collect()
 
         if accelerator.is_main_process:
             if args.validation_prompt is not None and (epoch + 1) % args.validation_epochs == 0:
