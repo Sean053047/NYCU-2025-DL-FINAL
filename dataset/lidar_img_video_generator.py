@@ -204,7 +204,7 @@ class DiffusionGetVideo(Dataset):
                     os.makedirs(sensor_save_dir, exist_ok=True)
                     filename = f"{sds[cam].timestamp}.jpg"
                     cond_img = self.get_condition_image(sds, cam, extra_T)
-                    cv2.imwrite(os.path.join(sensor_save_dir, filename), (cond_img*255).astype(np.uint8))
+                    Image.fromarray((cond_img * 255).astype(np.uint8)).save(os.path.join(sensor_save_dir, filename))
 
         # * Dump TF, TF here save the transforms between different sensors without considering the ego transforms. 
         for sensor in sds_list.keys():
@@ -420,6 +420,12 @@ class DiffusionGetVideo(Dataset):
             agg_colors.append(sd.pc.colors)
         pc_arr = np.concat(agg_points, axis=1)
         pc_colors = np.concat(agg_colors, axis=1)
+        _pc = LidarPointCloud(pc_arr, ) # Create a point cloud object
+        _pc.colors = pc_colors
+        print('show point cloud')
+        self.render_point(_pc)
+        
+        
         intrinsic = self.get_intrinsic(sds[cam].token)
         depths = pc_arr[2, :]
         pc_im_idx = view_points(pc_arr[:3, :], intrinsic, normalize=True) # (col, row, 1)
@@ -462,6 +468,9 @@ class DiffusionGetVideo(Dataset):
         pc = pc.points[:3, :].T
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pc)
+        if hasattr(pc, 'colors'):
+            pcd_t = o3d.t.geometry.PointCloud.from_legacy(pcd)
+            pcd_t.point['colors'] = o3d.core.Tensor(pc.colors.T.astype(np.float32), dtype=o3d.core.Dtype.Float32)
         o3d.visualization.draw_geometries([pcd])        
     
     def render_image(self, img:np.ndarray):
@@ -583,7 +592,7 @@ if __name__ == "__main__":
     extra_transforms = [ {'rotation':rot, 'translation': trans}
                         for rot, trans in zip(rotations, translations)]
     dataset.dump_inference_per_scene(save_dir=args.save_dir, 
-                                     scene_tk=dataset.scene_tokens[0],
+                                     scene_tk=dataset.scene_tokens[1],
                                      cam='CAMERA_LEFT_FRONT',
                                      extra_transforms=extra_transforms)
     
