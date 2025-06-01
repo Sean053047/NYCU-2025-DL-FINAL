@@ -7,10 +7,14 @@ json_to_csv.pyclear_ckpt_dir.py
 man-truckscenes
 truckscenes_trainval.zip
 data
+dl_final_test
 # output
 prompt
 video
 v1
+v2
+output.mp4
+log.txt
 # others
 __pycache__
 cogvideox-sft

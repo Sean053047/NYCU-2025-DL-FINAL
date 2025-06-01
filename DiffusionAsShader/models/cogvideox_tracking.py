@@ -578,7 +578,7 @@ class CogVideoXImageToVideoPipelineTracking(CogVideoXImageToVideoPipeline, Diffu
         # 打印transformer blocks的数量
         print(f"Number of transformer blocks: {len(self.transformer.transformer_blocks)}")
         print(f"Number of tracking transformer blocks: {len(self.transformer.transformer_blocks_copy)}")
-        self.transformer = torch.compile(self.transformer)
+        # self.transformer = torch.compile(self.transformer)
 
     @torch.no_grad()
     def __call__(
@@ -671,6 +671,7 @@ class CogVideoXImageToVideoPipelineTracking(CogVideoXImageToVideoPipeline, Diffu
             latent_channels = self.transformer.config.in_channels // 2
         else:
             latent_channels = self.transformer.config.in_channels
+        
         latents, image_latents = self.prepare_latents(
             image,
             batch_size * num_videos_per_prompt,
@@ -685,19 +686,20 @@ class CogVideoXImageToVideoPipelineTracking(CogVideoXImageToVideoPipeline, Diffu
         )
         del image
         
-        _, tracking_image_latents = self.prepare_latents(
-            tracking_image,
-            batch_size * num_videos_per_prompt,
-            latent_channels,
-            num_frames,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents=None,
-        )
-        del tracking_image
+        # _, tracking_image_latents = self.prepare_latents(
+        #     tracking_image,
+        #     batch_size * num_videos_per_prompt,
+        #     latent_channels,
+        #     num_frames,
+        #     height,
+        #     width,
+        #     prompt_embeds.dtype,
+        #     device,
+        #     generator,
+        #     latents=None,
+        # )
+        # del tracking_image
+        
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -718,27 +720,31 @@ class CogVideoXImageToVideoPipelineTracking(CogVideoXImageToVideoPipeline, Diffu
                 if self.interrupt:
                     continue
 
-                latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-
                 latent_image_input = torch.cat([image_latents] * 2) if do_classifier_free_guidance else image_latents
-                latent_model_input = torch.cat([latent_model_input, latent_image_input], dim=2)
-                del latent_image_input
+                latent_model_input = latent_image_input
+                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                
+                # latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                # latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+                # latent_image_input = torch.cat([image_latents] * 2) if do_classifier_free_guidance else image_latents
+                # latent_model_input = torch.cat([latent_model_input, latent_image_input], dim=2)
+                # del latent_image_input
 
                 # Handle tracking maps
                 if tracking_maps is not None:
-                    latents_tracking_image = torch.cat([tracking_image_latents] * 2) if do_classifier_free_guidance else tracking_image_latents
+                    # latents_tracking_image = torch.cat([tracking_image_latents] * 2) if do_classifier_free_guidance else tracking_image_latents
                     tracking_maps_input = torch.cat([tracking_maps] * 2) if do_classifier_free_guidance else tracking_maps
-                    tracking_maps_input = torch.cat([tracking_maps_input, latents_tracking_image], dim=2)
-                    del latents_tracking_image
+                    # tracking_maps_input = torch.cat([tracking_maps_input, latents_tracking_image], dim=2)
+                    # del latents_tracking_image
                 else:
                     tracking_maps_input = None
 
                 # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
                 timestep = t.expand(latent_model_input.shape[0])
-
+                print(f"latent_model_input:{latent_model_input.shape} tracking_maps_input:{tracking_maps_input.shape}")
                 # Predict noise
-                self.transformer.to(dtype=latent_model_input.dtype)
+                # self.transformer.to(dtype=latent_model_input.dtype)
                 noise_pred = self.transformer(
                     hidden_states=latent_model_input,
                     encoder_hidden_states=prompt_embeds,

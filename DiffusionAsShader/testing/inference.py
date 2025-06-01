@@ -7,19 +7,25 @@ import torch
 from diffusers import (
     CogVideoXDPMScheduler,
     CogVideoXImageToVideoPipeline,
+    AutoencoderKLCogVideoX
 )
 
 from diffusers.utils import export_to_video, load_image, load_video
 
 import numpy as np
 
+from transformers import AutoTokenizer, T5EncoderModel
+from accelerate import Accelerator
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(current_dir, '..'))
-from models.cogvideox_tracking import CogVideoXImageToVideoPipelineTracking
+from models.cogvideox_tracking import CogVideoXImageToVideoPipelineTracking, CogVideoXTransformer3DModelTracking
+
 
 def generate_video(
     prompt: str,
     model_path: str,
+    transformer_path: str,
     tracking_path: str = None,
     tracking_video: torch.Tensor = None,
     output_path: str = "./output.mp4",
@@ -51,24 +57,57 @@ def generate_video(
     # 1.  Load the pre-trained CogVideoX pipeline with the specified precision (bfloat16).
     # add device_map="balanced" in the from_pretrained function and remove the enable_model_cpu_offload()
     # function to use Multi GPUs.
-
+    accelerator = Accelerator(
+        mixed_precision="fp16" if dtype == torch.float16 else "bf16",
+    )
     image = None
     video = None
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # transformer = CogVideoXTransformer3DModelTracking.from_pretrained(
-    #     model_path,
-    #     subfolder="transformer",
-    #     torch_dtype=dtype
-    # )
 
     if generate_type == "i2v":
-        pipe = CogVideoXImageToVideoPipelineTracking.from_pretrained(model_path, torch_dtype=dtype)
-        image = load_image(image=image_or_video_path)
+        # pipe = CogVideoXImageToVideoPipelineTracking.from_pretrained(model_path, torch_dtype=dtype)
+        transformer = CogVideoXTransformer3DModelTracking.from_pretrained(
+            transformer_path,
+            subfolder="transformer",
+            torch_dtype=dtype
+        )
+        text_encoder = T5EncoderModel.from_pretrained(
+            model_path,
+            subfolder="text_encoder",
+            torch_dtype=dtype
+        )
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            subfolder="tokenizer",
+            torch_dtype=dtype
+        )
+        vae = AutoencoderKLCogVideoX.from_pretrained(
+            model_path,
+            subfolder="vae",
+            torch_dtype=dtype
+        )
+        scheduler = CogVideoXDPMScheduler.from_pretrained(
+            model_path,
+            subfolder="scheduler",
+            torch_dtype=dtype,
+            timestep_spacing="trailing"
+        )
+        pipe = CogVideoXImageToVideoPipelineTracking(
+            scheduler=scheduler,
+            tokenizer=tokenizer,
+            transformer=transformer,
+            text_encoder=text_encoder,
+            vae=vae
+        )
+
+        # image = load_image(image=image_or_video_path)
+        image = load_video(image_or_video_path)[0]
         height, width = image.height, image.width
     else:
-        pipe = CogVideoXImageToVideoPipeline.from_pretrained("THUDM/CogVideoX-5b-I2V", torch_dtype=dtype)
-        image = load_image(image=image_or_video_path)
+        pipe = CogVideoXImageToVideoPipeline.from_pretrained(model_path, torch_dtype=dtype)
+        # image = load_image(image=image_or_video_path)
+        image = load_video(image_or_video_path)[0]
         height, width = image.height, image.width
 
     pipe.transformer.eval()
@@ -88,12 +127,13 @@ def generate_video(
             torch.from_numpy(np.array(frame)).permute(2, 0, 1).float() / 255.0 
             for frame in tracking_maps
         ])
-        tracking_maps = tracking_maps.to(device=device, dtype=dtype)
+        print(tracking_maps.shape)
+        tracking_maps = tracking_maps.to(device=accelerator.device, dtype=dtype)
         tracking_first_frame = tracking_maps[0:1]  # Get first frame as [1, C, H, W]
         height, width = tracking_first_frame.shape[2], tracking_first_frame.shape[3]
     elif tracking_video is not None:
         tracking_maps = tracking_video.float() / 255.0 # [T, C, H, W]
-        tracking_maps = tracking_maps.to(device=device, dtype=dtype)
+        tracking_maps = tracking_maps.to(device=accelerator.device, dtype=dtype)
         tracking_first_frame = tracking_maps[0:1]  # Get first frame as [1, C, H, W]
         height, width = tracking_first_frame.shape[2], tracking_first_frame.shape[3]
     else:
@@ -103,7 +143,7 @@ def generate_video(
     # 2. Set Scheduler.
     pipe.scheduler = CogVideoXDPMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
 
-    pipe.to(device, dtype=dtype)
+    pipe.to(accelerator.device, dtype=dtype)
     # pipe.enable_sequential_cpu_offload()
 
     pipe.vae.enable_slicing()
@@ -126,6 +166,7 @@ def generate_video(
         tracking_maps = None
         tracking_first_frame = None
 
+    accelerator.wait_for_everyone()
     # 4. Generate the video frames based on the prompt.
     if generate_type == "i2v":
         with torch.no_grad():
@@ -135,7 +176,7 @@ def generate_video(
                 image=image,
                 num_videos_per_prompt=num_videos_per_prompt,
                 num_inference_steps=num_inference_steps,
-                num_frames=49,
+                num_frames=81,
                 use_dynamic_cfg=True,
                 guidance_scale=guidance_scale,
                 generator=torch.Generator().manual_seed(seed),
@@ -152,7 +193,7 @@ def generate_video(
                 image=image,
                 num_videos_per_prompt=num_videos_per_prompt,
                 num_inference_steps=num_inference_steps,
-                num_frames=49,
+                num_frames=81,
                 use_dynamic_cfg=True,
                 guidance_scale=guidance_scale,
                 generator=torch.Generator().manual_seed(seed),
@@ -178,6 +219,9 @@ if __name__ == "__main__":
         "--model_path", type=str, default="THUDM/CogVideoX-5b-I2V", help="The path of the pre-trained model to be used"
     )
     parser.add_argument(
+        "--transformer_path", type=str, default=None, help="The path of the pre-trained transformer model to be used (optional)"
+    )
+    parser.add_argument(
         "--output_path", type=str, default="./output.mp4", help="The path where the generated video will be saved"
     )
     parser.add_argument("--guidance_scale", type=float, default=6.0, help="The scale for classifier-free guidance")
@@ -199,6 +243,7 @@ if __name__ == "__main__":
     generate_video(
         prompt=args.prompt,
         model_path=args.model_path,
+        transformer_path=args.transformer_path,
         tracking_path=args.tracking_path,
         output_path=args.output_path,
         image_or_video_path=args.image_or_video_path,

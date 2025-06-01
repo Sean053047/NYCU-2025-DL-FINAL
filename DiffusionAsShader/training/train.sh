@@ -9,13 +9,14 @@ accelerate launch --config_file accelerate_config.yaml \
     cogvideox_image_to_video_sft.py \
     --pretrained_model_name_or_path $MODEL_PATH \
     --data_root $DATA_ROOT \
-    --output_dir v1\
+    --output_dir v2\
     --dataset_file $DATA_ROOT/metadata.csv \
     --video_column "cam_video" \
     --tracking_column "lidar_video" \
     --caption_column "prompt" \
     --height 480 \
     --width 720 \
+    --max_num_frames 81 \
     --num_tracking_blocks 18 \
     --load_tensors \
     --mixed_precision fp16 \
@@ -26,6 +27,6 @@ accelerate launch --config_file accelerate_config.yaml \
     --learning_rate 1e-5 \
     --lr_scheduler constant \
     --enable_slicing \
-    --enable_tiling \
-    --resume_from_checkpoint latest
+    --enable_tiling 
+    # --resume_from_checkpoint latest
     # --precompute_embeddings

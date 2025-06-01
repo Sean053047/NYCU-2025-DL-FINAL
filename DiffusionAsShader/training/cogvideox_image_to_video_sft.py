@@ -1031,33 +1031,16 @@ def main(args):
                         return_dict=False,
                     )[0]
                     
-                # model_pred = scheduler.get_velocity(model_output, noisy_video_latents, timesteps)
                 
-                # ① 僅保留影片通道 (前 8 ch)
+                # # ① 僅保留影片通道 (前 8 ch)
                 noise_pred = model_output[:, :, : video_latents.shape[2]]  # [B, F, 8, H, W]
-
-                # ② 交換 get_velocity() 參數順序
-                model_pred = scheduler.get_velocity(
-                    noisy_video_latents,  # sample  (x_t)
-                    noise_pred,           # noise   (ε̂)
-                    timesteps
-                )
+                model_pred = scheduler.get_velocity(noise_pred, noisy_video_latents, timesteps)
 
                 weights = 1 / (1 - alphas_cumprod[timesteps])
                 while len(weights.shape) < len(model_pred.shape):
                     weights = weights.unsqueeze(-1)
-                
-                # target = video_latents
-                target = scheduler.get_velocity(
-                    noisy_video_latents,  # sample (x_0)
-                    noise,          # noise   (ε)
-                    timesteps
-                )
 
-                loss = torch.mean(
-                    (weights * (model_pred - target) ** 2).reshape(batch_size, -1),
-                    dim=1,
-                )
+                loss = torch.mean((weights * (model_pred - video_latents) ** 2).reshape(batch_size, -1),dim=1)
                 loss = loss.mean()
                 accelerator.backward(loss)
 
