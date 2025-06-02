@@ -342,12 +342,14 @@ def main(args):
         args.pretrained_model_name_or_path,
         subfolder="tokenizer",
         revision=args.revision,
+        device_map="cpu",
     )
 
     text_encoder = T5EncoderModel.from_pretrained(
         args.pretrained_model_name_or_path,
         subfolder="text_encoder",
         revision=args.revision,
+        device_map="cpu",
     )
 
     # CogVideoX-2b weights are stored in float16
@@ -360,6 +362,7 @@ def main(args):
             torch_dtype=load_dtype,
             revision=args.revision,
             variant=args.variant,
+            device_map="cpu",
         )
     else:
         transformer = CogVideoXTransformer3DModelTracking.from_pretrained(
@@ -369,6 +372,7 @@ def main(args):
             revision=args.revision,
             variant=args.variant,
             num_tracking_blocks=args.num_tracking_blocks,
+            device_map="cpu",
         )
 
     vae = AutoencoderKLCogVideoX.from_pretrained(
@@ -376,6 +380,7 @@ def main(args):
         subfolder="vae",
         revision=args.revision,
         variant=args.variant,
+        device_map="cpu",
     )
 
     scheduler = CogVideoXDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
@@ -535,6 +540,7 @@ def main(args):
         use_cpu_offload_optimizer=args.use_cpu_offload_optimizer,
         offload_gradients=args.offload_gradients,
     )
+    model_config = transformer.module.config if hasattr(transformer, "module") else transformer.config
 
     # Dataset and DataLoader
     if args.video_reshape_mode is None:
@@ -553,7 +559,15 @@ def main(args):
                 "load_tensors": args.load_tensors,
                 "random_flip": args.random_flip,
             }   
-            train_dataset = VideoDatasetWithResizingTracking(**dataset_init_kwargs)
+            train_dataset = VideoDatasetWithResizingTracking(
+                vae=vae, 
+                tokenizer=tokenizer, 
+                text_encoder=text_encoder,
+                max_text_seq_length=model_config.max_text_seq_length,
+                accelerator=accelerator,
+                weight_dtype=weight_dtype,
+                **dataset_init_kwargs
+            )
         else:
             dataset_init_kwargs = {
                 "data_root": args.data_root,
@@ -723,16 +737,18 @@ def main(args):
                     if args.tracking_column is not None:
                         tracking_maps = tracking_maps.permute(0, 2, 1, 3, 4)  # [B, C, F, H, W]
                         tracking_latent_dist = vae.encode(tracking_maps).latent_dist
-                else:
-                    latent_dist = DiagonalGaussianDistribution(videos)
+                # else:
+                #     latent_dist = DiagonalGaussianDistribution(videos)
 
-                videos = latent_dist.sample() * VAE_SCALING_FACTOR
+                # videos = latent_dist.sample() * VAE_SCALING_FACTOR
+                videos = videos * VAE_SCALING_FACTOR
                 videos = videos.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
                 videos = videos.to(memory_format=torch.contiguous_format, dtype=weight_dtype)
                 model_input = videos
 
                 if args.tracking_column is not None:
-                    tracking_maps = tracking_latent_dist.sample() * VAE_SCALING_FACTOR
+                    # tracking_maps = tracking_latent_dist.sample() * VAE_SCALING_FACTOR
+                    tracking_maps = tracking_maps * VAE_SCALING_FACTOR
                     tracking_maps = tracking_maps.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
                     tracking_maps = tracking_maps.to(memory_format=torch.contiguous_format, dtype=weight_dtype)
 

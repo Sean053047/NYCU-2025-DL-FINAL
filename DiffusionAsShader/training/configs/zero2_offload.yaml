@@ -33,7 +33,11 @@
         "overlap_comm": true,
         "reduce_scatter": true,
         "reduce_bucket_size": 5e8,
-        "contiguous_gradients": true
+        "contiguous_gradients": true,
+        "offload_optimizer": {
+            "device": "cpu",
+            "pin_memory": true
+        }
     },
     "gradient_accumulation_steps": 1,
     "train_micro_batch_size_per_gpu": 1,
