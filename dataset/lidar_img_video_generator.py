@@ -69,19 +69,6 @@ class SensorData(object):
     @classmethod
     def deserialize(cls, item:Dict):
         return cls(**item)
-    
-    def to_pcd(self, file_path:str, rm_transparent_pc:bool=True):
-        import pypcd4
-        assert 'CAMERA' not in self.channel, 'Camera data cannot be saved as pcd file.'
-        assert self.pc is not None, 'Point cloud data is not available.'
-        fields = ('x', 'y', 'z', 'r', 'g', 'b', 'a')
-        types = (np.float32, np.float32, np.float32, np.float32, np.float32, np.float32, np.float32)
-        arr = np.concat((self.pc.points[:3, :], self.pc.colors), axis=0).T
-        if rm_transparent_pc:
-            mask = arr[:, 6] > 0.0 
-            arr = arr[mask, :]
-        pcd = pypcd4.PointCloud.from_points(arr, fields=fields, types=types)
-        pcd.save(file_path)
         
     def __repr__(self):
         return f"<SD:{self.channel}, tk:{self.token}, t:{self.timestamp}>"
@@ -142,20 +129,20 @@ class DiffusionGetVideo(Dataset):
                 for i in range(self.chunk_size):
                     image = self.read_image_from_token(sw_tokens[cam][i])
                     image = image[:, :, ::-1] # Convert to BGR format for OpenCV
-                    cam_writer.write(image)    
+                    cam_writer.write(image.astype(np.uint8))    
                     if sw_tokens[pc][i] is not None: 
                         pointmap, mask = self.get_pointmap(sw_tokens[pc][i], sw_tokens[cam][i], keep_intensity=False)
                         image[~mask, : ] = 0
                     else:
                         image = np.zeros((self.image_shape[0], self.image_shape[1], 3), dtype=np.uint8)
-                    pc_writer.write(image)
+                    pc_writer.write(image.astype(np.uint8))
                     
                 pc_writer.release()
                 cam_writer.release()
     
     def dump_scene_inference(self, save_dir:str,):
         ...
-
+    
     def dump_inference_per_scene(self, save_dir, scene_tk, cam, extra_transforms:List[Dict]=None):
         '''
         Based on certain camera, move the orientation and position.
@@ -176,25 +163,33 @@ class DiffusionGetVideo(Dataset):
             distance, index = KDTree(cmp_t).query(base_t, k=1, workers=-1)                        
             for i, idx in enumerate(index.flatten()):
                 sds_storage[i][sensor] = sd_list[idx]
-        
+        sds_storage = [sds_storage[i] for i in range(10)]
         # * Query per frame point cloud.
-        sds_storage = [sds for i, sds in enumerate(sds_storage) if i < 2] # Remove empty storage
         for sds in tqdm(sds_storage, total=len(sds_storage), desc=f'Query PointCloud color: '):
             self.query_pc_color(sds)
-            
+        
         # * Dump whole scene data
         scene_name = self.trucksc.get('scene', scene_tk)['name']
+        ego_poses = []  # Ego poses for the scene, will be dumped to json file.
         for sds in tqdm(sds_storage, total=len(sds_storage), desc=f'Dumping scene {scene_name}'):
             for sensor, sd in sds.items():                
                 sensor_save_dir = os.path.join(save_dir, scene_name, sensor)
                 os.makedirs(sensor_save_dir, exist_ok=True)
-                fstem = f"{sd.timestamp}"
+                fstem = f"{sd.timestamp}000" # * Add 3 zeros to make it compatible with the original timestamp format.
                 if 'LIDAR' in sensor or 'RADAR' in sensor:
                     filename = fstem + '.pcd'
-                    sd.to_pcd(os.path.join(sensor_save_dir, filename))
+                    self.to_pcd(sd.pc, os.path.join(sensor_save_dir, filename))
+                    # shutil.copyfile(self.trucksc.get_sample_data_path(sd.token), os.path.join(sensor_save_dir, filename))
                 else:
                     filename = fstem + '.jpg'
                     shutil.copyfile(self.trucksc.get_sample_data_path(sd.token), os.path.join(sensor_save_dir, filename))
+                ego_pose = self.trucksc.get('ego_pose', sd.ego_pose_token)
+                ego_pose['timestamp'] = f"{ego_pose['timestamp']}000" # Add 3 zeros to make it compatible with the original timestamp format.
+                ego_poses.append({k:v for k,v in ego_pose.items() if k!='token'}) # Get ego pose
+                self.render_point(sd.pc)
+        
+        ego_poses = sorted(ego_poses, key=lambda x: x['timestamp']) # Sort ego poses by timestamp
+        self.to_json(ego_poses, os.path.join(save_dir, scene_name, 'tf', 'ego_poses.json'))
         
         # * Dump projected pcd condition (May affect the original values of pc)
         if extra_transforms is not None:
@@ -206,30 +201,38 @@ class DiffusionGetVideo(Dataset):
                     cond_img = self.get_condition_image(sds, cam, extra_T)
                     Image.fromarray((cond_img * 255).astype(np.uint8)).save(os.path.join(sensor_save_dir, filename))
 
-        # * Dump TF, TF here save the transforms between different sensors without considering the ego transforms. 
+        # * Dump TF, TF here save the transforms between different sensors without considering the ego transforms.     
         for sensor in sds_list.keys():
-            # * Normal tf to base camera
-            tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_{cam}')
-            os.makedirs(tf_save_dir, exist_ok=True)
-            if sensor != cam:
+            # * Dump intrinsic matrix
+            if 'CAMERA' in sensor:
+                intrinsic = self.get_intrinsic(sds[cam].token).flatten().tolist() # Check if intrinsic matrix is correct
+                intrinsic_save_dir = os.path.join(save_dir, scene_name, 'intrinsic')
+                os.makedirs(intrinsic_save_dir, exist_ok=True)
+                self.to_json(intrinsic, os.path.join(intrinsic_save_dir, f'{sensor}.json'),)
+                
+                if sensor == cam:
+                    for i in range(len(extra_transforms)):
+                        self.to_json(intrinsic, os.path.join(intrinsic_save_dir, f'{cam}_T{i}.json'),)
+            
+            # * Sensor to base camera
+            if sensor != cam: # Sensor != base camera
+                tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_{cam}')
+                os.makedirs(tf_save_dir, exist_ok=True)
                 T = self.get_transform(sd.token, sds[cam].token, without_ego=True).flatten().tolist()
-                with open(os.path.join(tf_save_dir, f'{sensor}.json'), 'w') as f:
-                    json.dump(T, f, indent=4)
-            # * To Extra TF
+                self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
+            
+            # * Sensor to ego
+            tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_ego')
+            T = self.get_transform(sd.token, to_ego=True).flatten().tolist()
+            self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
+            
+            # * Sensor to Extra_TF
             for i, extra_T in enumerate(extra_transforms):
                 tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_{cam}_T{i}')
-                os.makedirs(tf_save_dir, exist_ok=True)
                 T = self.get_transform(sd.token, sds[cam].token, extra_T=extra_T, without_ego=True).flatten().tolist()
-                with open(os.path.join(tf_save_dir, f'{sensor}.json'), 'w') as f:
-                    json.dump(T, f, indent=4)
-        # * Dump intrinsic matrix
-        for sensor in sds_list.keys():
-            if 'CAMERA' not in sensor: continue
-            intrinsic = self.get_intrinsic(sds[cam].token).flatten().tolist() # Check if intrinsic matrix is correct
-            intrinsic_save_dir = os.path.join(save_dir, scene_name, 'intrinsic')
-            os.makedirs(intrinsic_save_dir, exist_ok=True)
-            with open(os.path.join(intrinsic_save_dir, f'{sensor}.json'), 'w') as f:
-                json.dump(intrinsic, f, indent=4)
+                self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
+        
+        
     def get_sensor_sweep(self, scene_tk:str, sensor:str):
         '''Get the timestamps of the sensor data'''
         sweeps = []
@@ -273,17 +276,17 @@ class DiffusionGetVideo(Dataset):
             print(f'{scene["name"]} abandon redundant ', len(timestamps), 'samples.')
 
     def query_pc_color(self, sds:Dict[str, SensorData])->List[PointCloud]:
-        '''Assumption: All images captured at the same time.'''
+        '''Assumption: All images captured at the same time.
+        Initiate: colors attribute to PointCloud
+        '''
         cameras = [sensor for sensor in sds if 'CAMERA' in sensor]
         range_sensors = [sensor for sensor in sds if 'LIDAR' in sensor or 'RADAR' in sensor]
-        color_pc = dict()
         for range_sensor in range_sensors:
             rs_sd = sds[range_sensor]
-            
             # * Load pc
             data_path = self.trucksc.get_sample_data_path(rs_sd.token)
-            pc = LidarPointCloud.from_file(data_path) if 'LIDAR' in range_sensor else RadarPointCloud.from_file(data_path)
-            pc.colors = np.zeros((4, pc.points.shape[1]), dtype=np.float32) # (x, y, z, transparency)
+            rs_sd.pc = LidarPointCloud.from_file(data_path) if 'LIDAR' in range_sensor else RadarPointCloud.from_file(data_path)
+            rs_sd.pc.colors = np.zeros((4, rs_sd.pc.points.shape[1]), dtype=np.float32) # (x, y, z, transparency)
             
             # * Project to each camera and colorize
             for cam in cameras:
@@ -295,11 +298,14 @@ class DiffusionGetVideo(Dataset):
                 # ? Colorize
                 image = self.read_image_from_token(cam_sd.token) / 255.0
                 color = np.vstack((image[mask,:].T,  np.ones((1, len(pc_idx)), dtype=np.float32))) # (4, N)  r,g,b,a
-                pc.colors[:4, pc_idx] = color # ? directly assign. The processing order of camera may influence the color of points.
-            rs_sd.pc = pc
-            color_pc[range_sensor] = rs_sd
+                rs_sd.pc.colors[:4, pc_idx] = color # ? directly assign. The processing order of camera may influence the color of points.
+            # self.render_point(rs_sd.pc) # Debug: render point cloud
     
-    def get_transform(self, src_tk:str, dst_tk:str, extra_T:Dict[str, Union[np.ndarray, Quaternion]]=None, without_ego:bool=False)->np.ndarray:
+    def get_transform(  self, 
+                        src_tk:str, 
+                        dst_tk:str=None, 
+                        extra_T:Dict[str, Union[np.ndarray, Quaternion]]=None, 
+                        without_ego:bool=False, to_ego:bool=False)->np.ndarray:
         '''Have check the precision error < 1e-10
         extra_T: {'rotation': Quaternion, 'translation': np.ndarray}
         '''
@@ -318,15 +324,18 @@ class DiffusionGetVideo(Dataset):
                 T[:3, 3] = np.array(t_record['translation'])
             return T
         src_sd = self.trucksc.get('sample_data', src_tk)
-        dst_sd = self.trucksc.get('sample_data', dst_tk)
         transforms = _get_T(self.trucksc.get('calibrated_sensor', src_sd['calibrated_sensor_token']))
+        if to_ego: return transforms        
+        
+        dst_sd = self.trucksc.get('sample_data', dst_tk)
         if not without_ego:
             transforms = _get_T(self.trucksc.get('ego_pose', src_sd['ego_pose_token'])).dot(transforms)
             transforms = _get_T(self.trucksc.get('ego_pose', dst_sd['ego_pose_token']), inv=True).dot(transforms)
-        if extra_T is None:
-            transforms = _get_T(self.trucksc.get('calibrated_sensor', dst_sd['calibrated_sensor_token']), inv=True).dot(transforms)
-        else:
-            transforms = _get_T(extra_T, inv=True).dot(transforms) # Apply extra transformation if provided
+        transforms = _get_T(
+            (self.trucksc.get('calibrated_sensor', dst_sd['calibrated_sensor_token']) if extra_T is None else extra_T), 
+            inv=True
+            ).dot(transforms)
+        
         return transforms        
     
     def get_intrinsic(self, cam_tk:str)->np.ndarray:
@@ -408,23 +417,21 @@ class DiffusionGetVideo(Dataset):
         # * p.s. Currently only use lidar points.
         agg_points = list()
         agg_colors = list()
+        import copy
         for sensor, sd in sds.items():
             if "LIDAR" not in sensor: continue
+            pc = copy.deepcopy(sd.pc)
             # * Remove transparent points
-            valid_mask = sd.pc.colors[3, :] > 0.0
-            sd.pc.points = sd.pc.points[:, valid_mask]
-            sd.pc.colors = sd.pc.colors[:, valid_mask]
-            sd.pc.timestamps = sd.pc.timestamps[:, valid_mask]
-            sd.pc.transform(self.get_transform(sd.token, sds[cam].token, extra_T=extra_T))
-            agg_points.append(sd.pc.points)
-            agg_colors.append(sd.pc.colors)
+            valid_mask = pc.colors[3, :] > 0.0
+            pc.points = pc.points[:, valid_mask]
+            pc.colors = pc.colors[:, valid_mask]
+            pc.transform(self.get_transform(sd.token, sds[cam].token, extra_T=extra_T))
+            agg_points.append(pc.points)
+            agg_colors.append(pc.colors)    
         pc_arr = np.concat(agg_points, axis=1)
         pc_colors = np.concat(agg_colors, axis=1)
         _pc = LidarPointCloud(pc_arr, ) # Create a point cloud object
         _pc.colors = pc_colors
-        print('show point cloud')
-        self.render_point(_pc)
-        
         
         intrinsic = self.get_intrinsic(sds[cam].token)
         depths = pc_arr[2, :]
@@ -465,18 +472,43 @@ class DiffusionGetVideo(Dataset):
     
     def render_point(self, pc:PointCloud):
         import open3d as o3d
-        pc = pc.points[:3, :].T
+        
+        pc_arr = pc.points[:3, :].T
         pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pc)
+        pcd.points = o3d.utility.Vector3dVector(pc_arr)
+        frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
         if hasattr(pc, 'colors'):
-            pcd_t = o3d.t.geometry.PointCloud.from_legacy(pcd)
-            pcd_t.point['colors'] = o3d.core.Tensor(pc.colors.T.astype(np.float32), dtype=o3d.core.Dtype.Float32)
-        o3d.visualization.draw_geometries([pcd])        
+            colors = pc.colors.T.astype(np.float32)
+            mask = colors[:, 3] > 0.0 # Remove transparent points
+            colors = colors[mask, :3] # Keep only RGB channels
+            pc_arr = pc_arr[mask, :]
+            pcd.points = o3d.utility.Vector3dVector(pc_arr)
+            pcd.colors = o3d.utility.Vector3dVector(colors[:,:3])
+        o3d.visualization.draw_geometries([pcd, frame])        
     
     def render_image(self, img:np.ndarray):
         import cv2
         cv2.imshow('tmp', img)
         cv2.waitKey(0)
+    
+    @staticmethod
+    def to_json(data, fpth:str):
+        import json
+        os.makedirs(os.path.dirname(fpth), exist_ok=True)
+        with open(fpth, 'w') as f: 
+            json.dump(data, f, indent=4)
+    
+    @staticmethod
+    def to_pcd( pc, fpth:str, rm_transparent_pc:bool=False):
+        import pypcd4
+        fields = ('x', 'y', 'z', 'r', 'g', 'b', 'a')
+        types = (np.float32, np.float32, np.float32, np.float32, np.float32, np.float32, np.float32)
+        arr = np.concat((pc.points[:3, :], pc.colors), axis=0).T
+        if rm_transparent_pc:
+            mask = arr[:, 6] > 0.0 
+            arr = arr[mask, :]
+        pcd = pypcd4.PointCloud.from_points(arr, fields=fields, types=types)
+        pcd.save(fpth)
         
     def __official_pc_transform(self, pc:PointCloud, src_tk:str, dst_tk:str):
         src_sd = self.trucksc.get('sample_data', src_tk)
@@ -562,11 +594,11 @@ if __name__ == "__main__":
     image_transform = transforms.Compose([
         transforms.Resize(image_shape),
     ])
-    dataset = DiffusionGetVideo(data_root='/data/truckscenes', version='v1.0-mini', split='mini_val', chunk_size=81,
+    dataset = DiffusionGetVideo(data_root=args.data_root, version='v1.0-mini', split='mini_val', chunk_size=81,
                                 pair=pair, image_transform=image_transform)
     
     # dataset.dump_pair_video(save_dir=args.save_dir)
-    # dataset.dump_scene_inference(save_dir=args.save_dir)
+    
     '''
     example:
     
@@ -575,7 +607,7 @@ if __name__ == "__main__":
         quaternion:[0.5243729158425541, -0.5347430148556852, 0.46913802442248353, -0.46796630993566085]
     CAMERA_LEFT_BACK 
         translation:[5.049643, 1.368585, 2.115646]
-        quaternion:[0.5243729158425541, -0.5347430148556852, 0.46913802442248353, -0.46796630993566085]
+        quaternion:[0.6815585306659455, -0.67419642629349, -0.2069280647012522, 0.19523812150437736]
     CAMERA_RIGHT_FRONT
         translation:[5.226811, -1.310934, 2.092867]
         quaternion:[0.46356873659542747, -0.46682641092971633, 0.5298264899369438, -0.5352205331177945]
@@ -587,7 +619,7 @@ if __name__ == "__main__":
     rotations = [Quaternion([0.46356873659542747, -0.46682641092971633, 0.5298264899369438, -0.5352205331177945])] * 2 + \
                 [Quaternion([0.5243729158425541, -0.5347430148556852, 0.46913802442248353, -0.46796630993566085])] * 2
     base = np.array([5.218337, 1.289023, 2.110627]) # Base on Camera left front
-    translations = [np.array([1, 1 ,0]), np.array([0.5, 1 ,0]), np.array([-0.5, 1 ,0]), np.array([-1, 1 ,0])]
+    translations = [np.array([1, 5 ,0]), np.array([0.5, 5 ,0]), np.array([-0.5, 5 ,0]), np.array([-1, 5 ,0])]
     translations = [ tr + base for tr in translations]
     extra_transforms = [ {'rotation':rot, 'translation': trans}
                         for rot, trans in zip(rotations, translations)]
