@@ -227,6 +227,15 @@ class DiffusionGetVideo(Dataset):
                 tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_{cam}_T{i}')
                 T = self.get_transform(__tmp_sds[sensor].token, __tmp_sds[cam].token, extra_T=extra_T, without_ego=True).flatten().tolist()
                 self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
+        # * extra_T to ego 
+        tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_ego')
+        for i, extra_T in enumerate(extra_transforms):
+            T = np.eye(4, dtype=np.float64)
+            T[:3, :3] = Quaternion(extra_T['rotation']).rotation_matrix
+            T[:3, 3] = np.array(extra_T['translation'])
+            T = T.flatten().tolist()
+            self.to_json(T, os.path.join(tf_save_dir, f'{cam}_T{i}.json'))
+            
         
     def get_sensor_sweep(self, scene_tk:str, sensor:str):
         '''Get the timestamps of the sensor data'''

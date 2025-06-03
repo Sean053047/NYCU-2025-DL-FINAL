@@ -41,7 +41,30 @@ camera:
     frame_id: 'CRB'
     schema: 'foxglove_msgs/msg/CompressedImage'
     topic: '/crb'
+  
+  - data_dir: 'CAMERA_LEFT_FRONT_T0'
+    suffix: '.jpg'
+    frame_id: 'CLF_T0'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t0'  
+  
+  - data_dir: 'CAMERA_LEFT_FRONT_T1'
+    suffix: '.jpg'
+    frame_id: 'CLF_T1'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t1'  
+  
+  - data_dir: 'CAMERA_LEFT_FRONT_T2'
+    suffix: '.jpg'
+    frame_id: 'CLF_T2'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t2'
 
+  - data_dir: 'CAMERA_LEFT_FRONT_T3'
+    suffix: '.jpg'
+    frame_id: 'CLF_T3'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t3'  
 
 
 static_tf:
@@ -100,6 +123,39 @@ static_tf:
     parent_frame_id: 'base_link'
     child_frame_id: 'CRB'
     topic: '/crb_tf'
+  
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T0.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T0'
+    topic: '/clf_t0_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T1.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T1'
+    topic: '/clf_t1_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T2.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T2'
+    topic: '/clf_t2_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T3.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T3'
+    topic: '/clf_t3_tf'
+    
 
 time_poses:
   - fpth: 'tf/ego_poses.json'
