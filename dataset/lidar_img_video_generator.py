@@ -163,7 +163,6 @@ class DiffusionGetVideo(Dataset):
             distance, index = KDTree(cmp_t).query(base_t, k=1, workers=-1)                        
             for i, idx in enumerate(index.flatten()):
                 sds_storage[i][sensor] = sd_list[idx]
-        sds_storage = [sds_storage[i] for i in range(10)]
         # * Query per frame point cloud.
         for sds in tqdm(sds_storage, total=len(sds_storage), desc=f'Query PointCloud color: '):
             self.query_pc_color(sds)
@@ -175,19 +174,16 @@ class DiffusionGetVideo(Dataset):
             for sensor, sd in sds.items():                
                 sensor_save_dir = os.path.join(save_dir, scene_name, sensor)
                 os.makedirs(sensor_save_dir, exist_ok=True)
-                fstem = f"{sd.timestamp}000" # * Add 3 zeros to make it compatible with the original timestamp format.
+                fstem = f"{sd.timestamp}" # * Add 3 zeros to make it compatible with the original timestamp format.
                 if 'LIDAR' in sensor or 'RADAR' in sensor:
                     filename = fstem + '.pcd'
                     self.to_pcd(sd.pc, os.path.join(sensor_save_dir, filename))
-                    # shutil.copyfile(self.trucksc.get_sample_data_path(sd.token), os.path.join(sensor_save_dir, filename))
                 else:
                     filename = fstem + '.jpg'
                     shutil.copyfile(self.trucksc.get_sample_data_path(sd.token), os.path.join(sensor_save_dir, filename))
                 ego_pose = self.trucksc.get('ego_pose', sd.ego_pose_token)
-                ego_pose['timestamp'] = f"{ego_pose['timestamp']}000" # Add 3 zeros to make it compatible with the original timestamp format.
+                ego_pose['timestamp'] = f"{ego_pose['timestamp']}" # Add 3 zeros to make it compatible with the original timestamp format.
                 ego_poses.append({k:v for k,v in ego_pose.items() if k!='token'}) # Get ego pose
-                self.render_point(sd.pc)
-        
         ego_poses = sorted(ego_poses, key=lambda x: x['timestamp']) # Sort ego poses by timestamp
         self.to_json(ego_poses, os.path.join(save_dir, scene_name, 'tf', 'ego_poses.json'))
         
@@ -202,36 +198,35 @@ class DiffusionGetVideo(Dataset):
                     Image.fromarray((cond_img * 255).astype(np.uint8)).save(os.path.join(sensor_save_dir, filename))
 
         # * Dump TF, TF here save the transforms between different sensors without considering the ego transforms.     
+        __tmp_sds = sds_storage[0] # Use the first sample data to get the sensor list
         for sensor in sds_list.keys():
             # * Dump intrinsic matrix
             if 'CAMERA' in sensor:
-                intrinsic = self.get_intrinsic(sds[cam].token).flatten().tolist() # Check if intrinsic matrix is correct
+                intrinsic = self.get_intrinsic(__tmp_sds[cam].token).flatten().tolist() # Check if intrinsic matrix is correct
                 intrinsic_save_dir = os.path.join(save_dir, scene_name, 'intrinsic')
                 os.makedirs(intrinsic_save_dir, exist_ok=True)
                 self.to_json(intrinsic, os.path.join(intrinsic_save_dir, f'{sensor}.json'),)
-                
                 if sensor == cam:
                     for i in range(len(extra_transforms)):
                         self.to_json(intrinsic, os.path.join(intrinsic_save_dir, f'{cam}_T{i}.json'),)
             
             # * Sensor to base camera
-            if sensor != cam: # Sensor != base camera
+            if sensor != cam: # Sensor != base camera    
                 tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_{cam}')
                 os.makedirs(tf_save_dir, exist_ok=True)
-                T = self.get_transform(sd.token, sds[cam].token, without_ego=True).flatten().tolist()
+                T = self.get_transform(__tmp_sds[sensor].token, __tmp_sds[cam].token, without_ego=True).flatten().tolist()
                 self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
             
             # * Sensor to ego
             tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_ego')
-            T = self.get_transform(sd.token, to_ego=True).flatten().tolist()
+            T = self.get_transform(__tmp_sds[sensor].token, to_ego=True).flatten().tolist()
             self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
             
             # * Sensor to Extra_TF
             for i, extra_T in enumerate(extra_transforms):
                 tf_save_dir = os.path.join(save_dir, scene_name, 'tf', f'to_{cam}_T{i}')
-                T = self.get_transform(sd.token, sds[cam].token, extra_T=extra_T, without_ego=True).flatten().tolist()
+                T = self.get_transform(__tmp_sds[sensor].token, __tmp_sds[cam].token, extra_T=extra_T, without_ego=True).flatten().tolist()
                 self.to_json(T, os.path.join(tf_save_dir, f'{sensor}.json'),)
-        
         
     def get_sensor_sweep(self, scene_tk:str, sensor:str):
         '''Get the timestamps of the sensor data'''
@@ -432,7 +427,6 @@ class DiffusionGetVideo(Dataset):
         pc_colors = np.concat(agg_colors, axis=1)
         _pc = LidarPointCloud(pc_arr, ) # Create a point cloud object
         _pc.colors = pc_colors
-        
         intrinsic = self.get_intrinsic(sds[cam].token)
         depths = pc_arr[2, :]
         pc_im_idx = view_points(pc_arr[:3, :], intrinsic, normalize=True) # (col, row, 1)
