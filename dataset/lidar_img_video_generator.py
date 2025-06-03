@@ -15,7 +15,7 @@ from typing import List, Dict, Tuple, Union
 from pyquaternion import Quaternion
 import cv2
 from abc import abstractmethod
-
+from scipy.spatial import KDTree
 class BaseSaver(object):
     def __init__(self, save_dir:str):
         self.save_dir = save_dir
@@ -103,21 +103,21 @@ class DiffusionGetVideo(Dataset):
     def dump_pair_video(self, save_dir:str, ):
         import multiprocessing as mp
         process = list()
-        for cam, pc in self.pair.items():
-            p = mp.Process(target=self.dump_video_per_pair, args=(save_dir, cam, pc))
-            p.start()
-            process.append(p)
-        for p in process:
-            p.join()
+        for cam, pc_list in self.pair.items():
+            self.dump_video_per_pair(save_dir, cam, pc_list)
+        #     p = mp.Process(target=self.dump_video_per_pair, args=(save_dir, cam, pc))
+        #     p.start()
+        #     process.append(p)
+        # for p in process:
+        #     p.join()
     
-    def dump_video_per_pair(self,save_dir, cam, pc):
+    def dump_video_per_pair(self,save_dir, cam, pc_list:List):
         from tqdm import tqdm
         count_cam_vid = 0
-        bar = tqdm(total=len(self.scene_tokens), desc=f'Dumping {cam} and {pc} video')
+        bar = tqdm(total=len(self.scene_tokens), desc=f'Dumping {cam} and {pc_list} video')
         for scene_tk in self.scene_tokens:
             bar.update(1)
-            scene = self.trucksc.get('scene', scene_tk)
-            for sw_tokens, timestamps in self.aggregate_pair_sweep(scene, cam):
+            for sds_sweeps in self.aggregate_pair_sweep(scene_tk, cam):
                 count_cam_vid += 1                    
                 
                 cam_writer = VideoWriter(save_dir=os.path.join(save_dir, 'cam_video'),
@@ -126,17 +126,18 @@ class DiffusionGetVideo(Dataset):
                 pc_writer = VideoWriter(save_dir=os.path.join(save_dir, 'lidar_video',),
                                             fname=f"{cam}_{str(count_cam_vid).zfill(5)}.mp4",
                                             image_shape=self.image_shape)
-                for i in range(self.chunk_size):
-                    image = self.read_image_from_token(sw_tokens[cam][i])
+                for i in range(self.chunk_size):                 
+                    image = self.read_image_from_token(sds_sweeps[i][cam].token)
                     image = image[:, :, ::-1] # Convert to BGR format for OpenCV
                     cam_writer.write(image.astype(np.uint8))    
-                    if sw_tokens[pc][i] is not None: 
-                        pointmap, mask = self.get_pointmap(sw_tokens[pc][i], sw_tokens[cam][i], keep_intensity=False)
-                        image[~mask, : ] = 0
-                    else:
-                        image = np.zeros((self.image_shape[0], self.image_shape[1], 3), dtype=np.uint8)
-                    pc_writer.write(image.astype(np.uint8))
                     
+                    final_mask = np.zeros((self.image_shape[0], self.image_shape[1]), dtype=bool)
+                    for range_sensor in self.pair[cam]:
+                        if sds_sweeps[i][range_sensor] is not None: 
+                            pointmap, mask = self.get_pointmap(sds_sweeps[i][range_sensor].token, sds_sweeps[i][cam].token, keep_intensity=False)
+                            final_mask = np.bitwise_or(final_mask, mask)
+                    image[~final_mask, :] = 0 # Set the background to black
+                    pc_writer.write(image.astype(np.uint8))
                 pc_writer.release()
                 cam_writer.release()
     
@@ -149,7 +150,7 @@ class DiffusionGetVideo(Dataset):
         '''
         from tqdm import tqdm
         import shutil 
-        from scipy.spatial import KDTree
+        
         import json
         sds_list = {sensor: self.get_sensor_sweep(scene_tk, sensor) 
                         for sensor, v in self.meta.items() if v}
@@ -250,34 +251,27 @@ class DiffusionGetVideo(Dataset):
             sd_tk= sensor_data['next']
         return sweeps
         
-    def aggregate_pair_sweep(self, scene, camera):
+    def aggregate_pair_sweep(self, scene_tk, cam):
         '''Get the corresponding camera images and lidar'''
-        sw_tokens = defaultdict(list)
-        timestamps = defaultdict(list)
-        sample = self.trucksc.get('sample', scene['first_sample_token'])
-        camera_tk = sample['data'][camera]
+        sds_list = {sensor: self.get_sensor_sweep(scene_tk, sensor) for sensor in self.pair[cam] }
+        sds_list[cam] = self.get_sensor_sweep(scene_tk, cam)
+        base_t = np.array([sd.timestamp for sd in sds_list[cam]], dtype=np.int64).reshape(-1, 1)
+        sds_storage  = [dict() for _ in range(len(base_t))]
+        # * Find the closet sensor sweep for each camera image
+        # * Save it to time-based storage.
+        for sensor, sd_list in sds_list.items():
+            cmp_t = np.array([sd.timestamp for sd in sd_list], dtype=np.int64).reshape(-1, 1)
+            distance, index = KDTree(cmp_t).query(base_t, k=1, workers=-1)                        
+            for i, idx in enumerate(index.flatten()):
+                sds_storage[i][sensor] = sd_list[idx]
         
-        count = 0
-        while camera_tk != '':
-            count += 1
-            sw_tokens[camera].append(camera_tk)
-            camera_data = self.trucksc.get('sample_data', camera_tk)            
-            timestamps[camera].append(camera_data['timestamp'])
-            pc = self.pair[camera]
-            
-            sample = self.trucksc.get('sample', camera_data['sample_token'])
-            pc_data = self.trucksc.get('sample_data', sample['data'][pc])
-            sw_tokens[pc].append(pc_data['token'])
-            timestamps[pc].append(pc_data['timestamp'])
-            
-            if count > 1 and count % self.chunk_size == 0: # Return sample per N data
-                yield sw_tokens, timestamps
-                sw_tokens.clear()
-                timestamps.clear()
-            camera_tk = camera_data['next']
-        
-        if len(timestamps) > 0:
-            print(f'{scene["name"]} abandon redundant ', len(timestamps), 'samples.')
+        sds_chunk = list()
+        for i, sds in enumerate(sds_storage):
+            sds_chunk.append(sds)
+            if (i+1) % self.chunk_size == 0: # Return sample per N data
+                yield sds_chunk
+                sds_chunk.clear()
+                
 
     def query_pc_color(self, sds:Dict[str, SensorData])->List[PointCloud]:
         '''Assumption: All images captured at the same time.
@@ -558,10 +552,10 @@ sensor_meta = dict(
     CAMERA_RIGHT_BACK=True
 )
 pair = dict(
-    CAMERA_LEFT_FRONT= 'LIDAR_LEFT', 
-    CAMERA_LEFT_BACK='LIDAR_LEFT', 
-    CAMERA_RIGHT_FRONT='LIDAR_RIGHT', 
-    CAMERA_RIGHT_BACK='LIDAR_RIGHT'
+    CAMERA_LEFT_FRONT= ['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR'],
+    CAMERA_LEFT_BACK=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR'], 
+    CAMERA_RIGHT_FRONT=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR'],
+    CAMERA_RIGHT_BACK=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR']
 )
 
 def parse_args():
@@ -600,8 +594,8 @@ if __name__ == "__main__":
     dataset = DiffusionGetVideo(data_root=args.data_root, version='v1.0-mini', split='mini_val', chunk_size=81,
                                 pair=pair, image_transform=image_transform)
     
-    # dataset.dump_pair_video(save_dir=args.save_dir)
-    
+    dataset.dump_pair_video(save_dir=args.save_dir)
+    exit()
     '''
     example:
     

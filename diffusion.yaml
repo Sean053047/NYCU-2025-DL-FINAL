@@ -163,3 +163,28 @@ time_poses:
     schema: 'foxglove_msgs/msg/PoseInFrame'
     topic: '/ego_pose'
 
+
+calib:
+  - fpth: 'intrinsic/CAMERA_LEFT_FRONT.json'
+    suffix: '.json'
+    frame_id: 'CLF'
+    schema: 'foxglove_msgs/msg/CameraCalibration'
+    topic: '/clf_info'
+
+  - fpth: 'intrinsic/CAMERA_LEFT_BACK.json'
+    suffix: '.json'
+    frame_id: 'CLB'
+    schema: 'foxglove_msgs/msg/CameraCalibration'
+    topic: '/clb_info'
+  
+  - fpth: 'intrinsic/CAMERA_RIGHT_FRONT.json'
+    suffix: '.json'
+    frame_id: 'CRF'
+    schema: 'foxglove_msgs/msg/CameraCalibration'
+    topic: '/crf_info'
+  
+  - fpth: 'intrinsic/CAMERA_RIGHT_BACK.json'
+    suffix: '.json'
+    frame_id: 'CRB'
+    schema: 'foxglove_msgs/msg/CameraCalibration'
+    topic: '/crb_info'
