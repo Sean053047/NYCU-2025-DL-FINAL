@@ -102,14 +102,24 @@ class DiffusionGetVideo(Dataset):
     
     def dump_pair_video(self, save_dir:str, ):
         import multiprocessing as mp
+        
         process = list()
         for cam, pc_list in self.pair.items():
             self.dump_video_per_pair(save_dir, cam, pc_list)
-        #     p = mp.Process(target=self.dump_video_per_pair, args=(save_dir, cam, pc))
+        #     p = mp.Process(target=self.dump_video_per_pair, args=(save_dir, cam, pc_list))
         #     p.start()
         #     process.append(p)
         # for p in process:
         #     p.join()
+
+        # with mp.Pool(processes=12) as pool:
+        #     tasks = []
+        #     for cam, pc_list in self.pair.items():
+        #         # self.dump_video_per_pair(save_dir, cam, pc_list)
+        #         tasks.append(pool.apply_async(self.dump_video_per_pair, args=(save_dir, cam, pc_list)))
+        #     for task in tasks:
+        #         task.get()    
+            
     
     def dump_video_per_pair(self,save_dir, cam, pc_list:List):
         from tqdm import tqdm
@@ -542,9 +552,9 @@ sensor_meta = dict(
     RADAR_LEFT_BACK=False, 
     LIDAR_LEFT= True,
     LIDAR_RIGHT=True, 
-    LIDAR_TOP_FRONT=False, 
-    LIDAR_TOP_LEFT=False, 
-    LIDAR_TOP_RIGHT=False, 
+    LIDAR_TOP_FRONT=True, 
+    LIDAR_TOP_LEFT=True, 
+    LIDAR_TOP_RIGHT=True, 
     LIDAR_REAR=True, 
     CAMERA_LEFT_FRONT=True, 
     CAMERA_LEFT_BACK=True, 
@@ -552,19 +562,28 @@ sensor_meta = dict(
     CAMERA_RIGHT_BACK=True
 )
 pair = dict(
-    CAMERA_LEFT_FRONT= ['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR'],
-    CAMERA_LEFT_BACK=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR'], 
-    CAMERA_RIGHT_FRONT=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR'],
-    CAMERA_RIGHT_BACK=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR']
+    CAMERA_LEFT_FRONT= ['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR',
+                        'LIDAR_TOP_FRONT', 'LIDAR_TOP_LEFT', 'LIDAR_TOP_RIGHT'],
+    CAMERA_LEFT_BACK=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR',
+                      'LIDAR_TOP_FRONT', 'LIDAR_TOP_LEFT', 'LIDAR_TOP_RIGHT'], 
+    CAMERA_RIGHT_FRONT=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR',
+                        'LIDAR_TOP_FRONT', 'LIDAR_TOP_LEFT', 'LIDAR_TOP_RIGHT'],
+    CAMERA_RIGHT_BACK=['LIDAR_LEFT', 'LIDAR_RIGHT', 'LIDAR_REAR',
+                       'LIDAR_TOP_FRONT', 'LIDAR_TOP_LEFT', 'LIDAR_TOP_RIGHT'],
 )
 
+# pair = dict(
+#     CAMERA_LEFT_FRONT= ['RADAR_RIGHT_BACK', 'RADAR_RIGHT_SIDE', 'RADAR_RIGHT_FRONT', 'RADAR_LEFT_FRONT','RADAR_LEFT_SIDE', 'RADAR_LEFT_BACK'],
+#     CAMERA_LEFT_BACK=['RADAR_RIGHT_BACK', 'RADAR_RIGHT_SIDE', 'RADAR_RIGHT_FRONT', 'RADAR_LEFT_FRONT','RADAR_LEFT_SIDE', 'RADAR_LEFT_BACK'], 
+#     CAMERA_RIGHT_FRONT=['RADAR_RIGHT_BACK', 'RADAR_RIGHT_SIDE', 'RADAR_RIGHT_FRONT', 'RADAR_LEFT_FRONT','RADAR_LEFT_SIDE', 'RADAR_LEFT_BACK'],
+#     CAMERA_RIGHT_BACK=['RADAR_RIGHT_BACK', 'RADAR_RIGHT_SIDE', 'RADAR_RIGHT_FRONT', 'RADAR_LEFT_FRONT','RADAR_LEFT_SIDE', 'RADAR_LEFT_BACK'],
+# )
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='Dump lidar condition video and video.')
     parser.add_argument('--data-root', type=str, default='/data/truckscenes', help='data root path')
-    parser.add_argument('--version', type=str, default='v1.0-mini', help='dataset version')
-    parser.add_argument('--save-pcvid', action='store_true', help='save point cloud video')
-    parser.add_argument('--split', type=str, default='mini_train', help='dataset split')
+    parser.add_argument('--version', type=str, default='v1.0-trainval', help='dataset version')
+    parser.add_argument('--split', type=str, default='train', help='dataset split')
     parser.add_argument('--chunk_size', type=int, default=81, help='chunk size')
     parser.add_argument('--im_height', type=int, default=480, help='image height')
     parser.add_argument('--im_width', type=int, default=832, help='image width')
@@ -591,7 +610,7 @@ if __name__ == "__main__":
     image_transform = transforms.Compose([
         transforms.Resize(image_shape),
     ])
-    dataset = DiffusionGetVideo(data_root=args.data_root, version='v1.0-mini', split='mini_val', chunk_size=81,
+    dataset = DiffusionGetVideo(data_root=args.data_root, version=args.version, split=args.split, chunk_size=81,
                                 pair=pair, image_transform=image_transform)
     
     dataset.dump_pair_video(save_dir=args.save_dir)
@@ -620,8 +639,13 @@ if __name__ == "__main__":
     translations = [ tr + base for tr in translations]
     extra_transforms = [ {'rotation':rot, 'translation': trans}
                         for rot, trans in zip(rotations, translations)]
-    dataset.dump_inference_per_scene(save_dir=args.save_dir, 
-                                     scene_tk=dataset.scene_tokens[1],
-                                     cam='CAMERA_LEFT_FRONT',
-                                     extra_transforms=extra_transforms)
+    
+    index  = [1, 134, 512]
+    
+    for idx in index:
+        print(dataset.trucksc.get('scene', dataset.scene_tokens[idx])['description'])
+        dataset.dump_inference_per_scene(save_dir=args.save_dir, 
+                                        scene_tk=dataset.scene_tokens[idx],
+                                        cam='CAMERA_LEFT_FRONT',
+                                        extra_transforms=extra_transforms)
     
