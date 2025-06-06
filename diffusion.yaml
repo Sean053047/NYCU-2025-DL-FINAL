@@ -1,0 +1,165 @@
+pcd:
+  - data_dir: 'LIDAR_LEFT'
+    suffix: '.pcd'
+    frame_id: 'LF'
+    schema: 'foxglove_msgs/msg/PointCloud'
+    topic: '/lf'
+  
+  - data_dir: 'LIDAR_RIGHT'
+    suffix: '.pcd'
+    frame_id: 'LR'
+    schema: 'foxglove_msgs/msg/PointCloud'
+    topic: '/lr'  
+  
+  - data_dir: 'LIDAR_REAR'
+    suffix: '.pcd'
+    frame_id: 'LB'
+    schema: 'foxglove_msgs/msg/PointCloud'
+    topic: '/lb'  
+
+camera:
+  - data_dir: 'CAMERA_LEFT_FRONT'
+    suffix: '.jpg'
+    frame_id: 'CLF'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf'  
+  
+  - data_dir: 'CAMERA_LEFT_BACK'
+    suffix: '.jpg'
+    frame_id: 'CLB'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clb'  
+  
+  - data_dir: 'CAMERA_RIGHT_FRONT'
+    suffix: '.jpg'
+    frame_id: 'CRF'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/crf'
+
+  - data_dir: 'CAMERA_RIGHT_BACK'
+    suffix: '.jpg'
+    frame_id: 'CRB'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/crb'
+  
+  - data_dir: 'CAMERA_LEFT_FRONT_T0'
+    suffix: '.jpg'
+    frame_id: 'CLF_T0'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t0'  
+  
+  - data_dir: 'CAMERA_LEFT_FRONT_T1'
+    suffix: '.jpg'
+    frame_id: 'CLF_T1'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t1'  
+  
+  - data_dir: 'CAMERA_LEFT_FRONT_T2'
+    suffix: '.jpg'
+    frame_id: 'CLF_T2'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t2'
+
+  - data_dir: 'CAMERA_LEFT_FRONT_T3'
+    suffix: '.jpg'
+    frame_id: 'CLF_T3'
+    schema: 'foxglove_msgs/msg/CompressedImage'
+    topic: '/clf_t3'  
+
+
+static_tf:
+  - fpth: 'tf/to_ego/LIDAR_LEFT.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'LF'
+    topic: '/lf_tf'
+  
+  - fpth: 'tf/to_ego/LIDAR_RIGHT.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'LR'
+    topic: '/lr_tf'
+  
+  - fpth: 'tf/to_ego/LIDAR_REAR.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'LB'
+    topic: '/lb_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF'
+    topic: '/clf_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_BACK.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLB'
+    topic: '/clb_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_RIGHT_FRONT.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CRF'
+    topic: '/crf_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_RIGHT_BACK.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CRB'
+    topic: '/crb_tf'
+  
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T0.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T0'
+    topic: '/clf_t0_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T1.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T1'
+    topic: '/clf_t1_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T2.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T2'
+    topic: '/clf_t2_tf'
+
+  - fpth: 'tf/to_ego/CAMERA_LEFT_FRONT_T3.json'
+    suffix: '.json'
+    row_major: True
+    schema: 'foxglove_msgs/msg/FrameTransforms'
+    parent_frame_id: 'base_link'
+    child_frame_id: 'CLF_T3'
+    topic: '/clf_t3_tf'
+    
+
+time_poses:
+  - fpth: 'tf/ego_poses.json'
+    frame_id: 'base_link'
+    schema: 'foxglove_msgs/msg/PoseInFrame'
+    topic: '/ego_pose'
+
