@@ -4,7 +4,7 @@ import json
 if __name__ == "__main__":
     # Define the input and output file paths
     input_json_path = './prompt/video_prompts.json'
-    output_csv_path = './data/metadata.csv'
+    output_csv_path = './prompt/metadata.csv'
 
     # Read the JSON file
     with open(input_json_path, 'r') as json_file:

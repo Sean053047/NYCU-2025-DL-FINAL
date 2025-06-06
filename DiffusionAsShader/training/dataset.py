@@ -427,10 +427,10 @@ class VideoDatasetWithResizingTracking(VideoDataset):
                 frames = frames.permute(0, 3, 1, 2).contiguous()
 
                 nearest_res = self._find_nearest_resolution(frames.shape[2], frames.shape[3])
-                frames_resized = torch.stack([resize(frame, nearest_res) for frame in frames], dim=0)
-                frames = torch.stack([self.video_transforms(frame) for frame in frames_resized], dim=0)
+                # frames_resized = torch.stack([resize(frame, nearest_res) for frame in frames], dim=0)
+                # frames = torch.stack([self.video_transforms(frame) for frame in frames_resized], dim=0)
 
-                image = frames[:1].clone() if self.image_to_video else None
+                # image = frames[:1].clone() if self.image_to_video else None
 
                 tracking_reader = decord.VideoReader(uri=self.tracking_paths[index].as_posix())
                 tracking_frames = tracking_reader.get_batch(frame_indices)
@@ -441,44 +441,57 @@ class VideoDatasetWithResizingTracking(VideoDataset):
                 
                 prompt = self.id_token + self.prompts[index]
 
-
                 frames = frames.view(-1, frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3]).permute(0, 2, 1, 3, 4).to(device=self.vae.device, dtype=self.weight_dtype)  # [B, C, F, H, W]
-                frame_latents = self.vae.encode(frames)
                 tracking_frames = tracking_frames.view(-1, tracking_frames.shape[0], tracking_frames.shape[1], tracking_frames.shape[2], tracking_frames.shape[3]).permute(0, 2, 1, 3, 4).to(device=self.vae.device, dtype=self.weight_dtype)  # [B, C, F, H, W]
-                tracking_latents = self.vae.encode(tracking_frames)
-                if self.image_to_video:
-                    image = image.view(1, image.shape[0], image.shape[1], image.shape[2], image.shape[3]).permute(0, 2, 1, 3, 4).to(device=self.vae.device, dtype=self.weight_dtype)
-                    image_latents = self.vae.encode(image) if self.image_to_video else None
 
-                from text_encoder import compute_prompt_embeddings
-                prompt_embeds = compute_prompt_embeddings(
-                        self.tokenizer,
-                        self.text_encoder,
-                        prompt,
-                        self.max_text_seq_length,
-                        self.accelerator.device,
-                        self.weight_dtype,
-                        requires_grad=False,
-                    ).to(device='cpu', dtype=self.weight_dtype)
+                with torch.no_grad():
+                    # frame_latents = self.vae.encode(frames)
+                    tracking_latents = self.vae.encode(tracking_frames)
+                    # if self.image_to_video:
+                    #     image = image.view(1, image.shape[0], image.shape[1], image.shape[2], image.shape[3]).permute(0, 2, 1, 3, 4).to(device=self.vae.device, dtype=self.weight_dtype)
+                    #     image_latents = self.vae.encode(image) if self.image_to_video else None
 
-                os.makedirs(os.path.join(self.data_root, "video_latents"), exist_ok=True)
+                    # from text_encoder import compute_prompt_embeddings
+                    # prompt_embeds = compute_prompt_embeddings(
+                    #         self.tokenizer,
+                    #         self.text_encoder,
+                    #         prompt,
+                    #         self.max_text_seq_length,
+                    #         self.accelerator.device,
+                    #         self.weight_dtype,
+                    #         requires_grad=False,
+                    #     ).to(device='cpu', dtype=self.weight_dtype)
+
+                # os.makedirs(os.path.join(self.data_root, "video_latents"), exist_ok=True)
                 os.makedirs(os.path.join(self.data_root, "tracking_map"), exist_ok=True)
-                os.makedirs(os.path.join(self.data_root, "prompt_embeds"), exist_ok=True)
-                if self.image_to_video:
-                    os.makedirs(os.path.join(self.data_root, "image_latents"), exist_ok=True)
+                # os.makedirs(os.path.join(self.data_root, "prompt_embeds"), exist_ok=True)
+                # if self.image_to_video:
+                #     os.makedirs(os.path.join(self.data_root, "image_latents"), exist_ok=True)
                 
                 video_name = self.video_paths[index].name.split(".")[0]
                 
-                video_latents = frame_latents[0].sample().squeeze(0)
+                # video_latents = frame_latents[0].sample().squeeze(0)
                 tracking_map = tracking_latents[0].sample().squeeze(0)
-                prompt_embeds = prompt_embeds[0].squeeze(0)
-                image_latents = image_latents[0].sample().squeeze(0) if self.image_to_video else None
+                # prompt_embeds = prompt_embeds[0].squeeze(0)
+                # image_latents = image_latents[0].sample().squeeze(0) if self.image_to_video else None
                 print(f"Saving video latents, tracking map and prompt embeddings for {video_name}...")
-                torch.save(video_latents, os.path.join(self.data_root, "video_latents", f"{video_name}.pt"))
+                # torch.save(video_latents, os.path.join(self.data_root, "video_latents", f"{video_name}.pt"))
                 torch.save(tracking_map, os.path.join(self.data_root, "tracking_map", f"{video_name}.pt"))
-                torch.save(prompt_embeds, os.path.join(self.data_root, "prompt_embeds", f"{video_name}.pt"))
-                if self.image_to_video:
-                    torch.save(image_latents, os.path.join(self.data_root, "image_latents", f"{video_name}.pt"))
+                # torch.save(prompt_embeds, os.path.join(self.data_root, "prompt_embeds", f"{video_name}.pt"))
+                # if self.image_to_video:
+                    # torch.save(image_latents, os.path.join(self.data_root, "image_latents", f"{video_name}.pt"))
+                return  {
+                    "prompt": tracking_map,
+                    "image": tracking_map,
+                    "video": tracking_map,
+                    "tracking_map": tracking_map,
+                    "video_metadata": {
+                        "num_frames": 0,
+                        "height": 0,
+                        "width": 0,
+                    },
+                }
+            
             # The VAE's temporal compression ratio is 4.
             # The VAE's spatial compression ratio is 8.
             latent_num_frames = video_latents.size(1)

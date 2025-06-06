@@ -1,5 +1,5 @@
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 MODEL_PATH="THUDM/CogVideoX-2B"
 DATA_ROOT="/eva_data5/kuoyuhuan/DLP_final/data"
@@ -9,14 +9,14 @@ accelerate launch --config_file accelerate_config.yaml \
     cogvideox_text_to_video_sft.py \
     --pretrained_model_name_or_path $MODEL_PATH \
     --data_root $DATA_ROOT \
-    --output_dir v3\
+    --output_dir v5 \
     --dataset_file $DATA_ROOT/metadata.csv \
     --video_column "cam_video" \
     --tracking_column "lidar_video" \
     --caption_column "prompt" \
     --height 480 \
-    --width 720 \
-    --max_num_frames 81 \
+    --width 768 \
+    --max_num_frames 49 \
     --num_tracking_blocks 18 \
     --load_tensors \
     --mixed_precision fp16 \
@@ -27,6 +27,6 @@ accelerate launch --config_file accelerate_config.yaml \
     --lr_scheduler constant \
     --enable_slicing \
     --enable_tiling \
-    --gradient_checkpointing 
-    # --resume_from_checkpoint latest
+    --gradient_checkpointing \
+    --resume_from_checkpoint latest 
     # --precompute_embeddings

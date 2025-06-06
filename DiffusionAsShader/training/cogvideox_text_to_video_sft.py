@@ -232,7 +232,7 @@ def log_validation(
                     ]
                 }
             )
-
+    torch.cuda.empty_cache()
     return videos
 
 
@@ -261,22 +261,29 @@ class CollateFunctionTracking:
         self.load_tensors = load_tensors
 
     def __call__(self, data: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-        prompts = [x["prompt"] for x in data[0]]
+        try:
+            prompts = [x["prompt"] for x in data[0]]
 
-        if self.load_tensors:
-            prompts = torch.stack(prompts).to(dtype=self.weight_dtype, non_blocking=True)
+            if self.load_tensors:
+                prompts = torch.stack(prompts).to(dtype=self.weight_dtype, non_blocking=True)
 
-        videos = [x["video"] for x in data[0]]
-        videos = torch.stack(videos).to(dtype=self.weight_dtype, non_blocking=True)
+            videos = [x["video"] for x in data[0]]
+            videos = torch.stack(videos).to(dtype=self.weight_dtype, non_blocking=True)
 
-        tracking_maps = [x["tracking_map"] for x in data[0]]
-        tracking_maps = torch.stack(tracking_maps).to(dtype=self.weight_dtype, non_blocking=True)
+            tracking_maps = [x["tracking_map"] for x in data[0]]
+            tracking_maps = torch.stack(tracking_maps).to(dtype=self.weight_dtype, non_blocking=True)
 
-        return {
-            "videos": videos,
-            "prompts": prompts,
-            "tracking_maps": tracking_maps,
-        }
+            return {
+                "videos": videos,
+                "prompts": prompts,
+                "tracking_maps": tracking_maps,
+            }
+        except Exception as e:
+            return {
+                "videos": {"video": torch.tensor([])},
+                "prompts": {"prompt": torch.tensor([])},
+                "tracking_maps": {"tracking_map": torch.tensor([])},
+            }
 
 def main(args):
     if args.report_to == "wandb" and args.hub_token is not None:
@@ -424,9 +431,9 @@ def main(args):
             "Mixed precision training with bfloat16 is not supported on MPS. Please use fp16 (recommended) or fp32 instead."
         )
 
-    text_encoder.to(accelerator.device, dtype=weight_dtype)
-    transformer.to(accelerator.device, dtype=weight_dtype)
-    vae.to(accelerator.device, dtype=weight_dtype)
+    # text_encoder.to(accelerator.device, dtype=weight_dtype)
+    # transformer.to(accelerator.device, dtype=weight_dtype)
+    # vae.to(accelerator.device, dtype=weight_dtype)
 
     if args.gradient_checkpointing:
         transformer.enable_gradient_checkpointing()
@@ -590,7 +597,28 @@ def main(args):
 
     collate_fn = CollateFunction(weight_dtype, args.load_tensors)
     collate_fn_tracking = CollateFunctionTracking(weight_dtype, args.load_tensors)
-
+    
+    if args.precompute_embeddings:
+        text_encoder.to(accelerator.device, dtype=weight_dtype)
+        vae.to(accelerator.device, dtype=weight_dtype)
+        
+        tmp_data_loader = DataLoader(
+            train_dataset,
+            batch_size=1,
+            # sampler=BucketSampler(train_dataset, batch_size=args.train_batch_size, shuffle=False),
+            collate_fn=collate_fn if args.tracking_column is None else collate_fn_tracking,
+            num_workers=0,
+            pin_memory=False
+        )
+        tmp_data_loader = accelerator.prepare(tmp_data_loader)
+        for _ in tmp_data_loader:
+            ...
+        accelerator.wait_for_everyone()
+        del tmp_data_loader
+        
+        text_encoder.to('cpu')
+        vae.to('cpu')
+        
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=1,
@@ -890,7 +918,9 @@ def main(args):
 
             if global_step >= args.max_train_steps:
                 break
-
+            
+            gc.collect()
+        
         if accelerator.is_main_process:
             if (args.validation_prompt is not None and (epoch + 1) % args.validation_epochs == 0) or (args.validation_prompt is not None and epoch == 0):
                 accelerator.print("===== Memory before validation =====")

@@ -659,78 +659,22 @@ class CogVideoXImageToVideoPipelineTracking(CogVideoXImageToVideoPipeline, Diffu
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
         self._num_timesteps = len(timesteps)
 
-        # 5. Prepare latents
-        # image = self.video_processor.preprocess(image, height=height, width=width).to(
-        #     device, dtype=prompt_embeds.dtype
-        # )
-
-        # tracking_image = self.video_processor.preprocess(tracking_image, height=height, width=width).to(
-        #     device, dtype=prompt_embeds.dtype
-        # )
         if self.transformer.config.in_channels != 16:
             latent_channels = self.transformer.config.in_channels // 2
         else:
             latent_channels = self.transformer.config.in_channels
         
-        # latents, image_latents = self.prepare_latents(
-        #     image,
-        #     batch_size * num_videos_per_prompt,
-        #     latent_channels,
-        #     num_frames,
-        #     height,
-        #     width,
-        #     prompt_embeds.dtype,
-        #     device,
-        #     generator,
-        #     latents,
-        # )
-        # del image
-        # image_latents = image
-        # padding_size = (tracking_maps.shape[0], tracking_maps.shape[1] - 1, *tracking_maps.shape[2:])
-        # latent_padding = image_latents.new_zeros((tracking_maps.shape[0], tracking_maps.shape[1] - 1, *tracking_maps.shape[2:]))
-        # image_latents = torch.cat([image_latents, latent_padding], dim=1)
-        # from diffusers.utils.torch_utils import randn_tensor
-        # latents = randn_tensor(image_latents.shape, generator=generator, device=device, dtype=prompt_embeds.dtype)
-        # latents = randn_tensor(padding_size, generator=generator, device=device, dtype=prompt_embeds.dtype)
-
+        from diffusers.utils.torch_utils import randn_tensor
         latents = randn_tensor(tracking_maps.shape, generator=generator, device=device, dtype=prompt_embeds.dtype)
         latents = latents * self.scheduler.init_noise_sigma
-        # latents = torch.cat([image_latents, latents], dim=1)
         
-        # from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
-        # video_latents = torch.load('/eva_data5/kuoyuhuan/DLP_final/data/video_latents/CAMERA_LEFT_BACK_00001.pt').unsqueeze(0).to(device, dtype=prompt_embeds.dtype)
-        # image_latents = torch.load('/eva_data5/kuoyuhuan/DLP_final/data/image_latents/CAMERA_LEFT_BACK_00001.pt').unsqueeze(0).to(device, dtype=prompt_embeds.dtype)
-
-        # video_latents = DiagonalGaussianDistribution(video_latents).sample()
-        # video_latents = video_latents.permute(0,2,1,3,4)
-        # video_latents = video_latents * self.vae.config.scaling_factor
         
-        # image_latents = DiagonalGaussianDistribution(image_latents).sample()
-        # image_latents = image_latents.permute(0,2,1,3,4)
-        # print(video_latents.shape, image_latents.shape)
-        # padding = image_latents.new_zeros((video_latents.shape[0], video_latents.shape[1] - 1, *video_latents.shape[2:]))
-        # # image_latents = torch.cat([image_latents, video_latents], dim=2)
-        # image_latents = torch.cat([image_latents, padding], dim=1)
-        # image_latents = torch.cat([image_latents, video_latents], dim=2)
+        # video_latents = torch.load('/eva_data5/kuoyuhuan/DLP_final/data/tracking_map/CAMERA_LEFT_BACK_00001.pt').unsqueeze(0).to(device)
+        # video_latents = video_latents.permute(0, 2, 1, 3, 4)  # Change to (batch_size, channels, num_frames, height, width)
         # video = self.decode_latents(video_latents)
         # video = self.video_processor.postprocess_video(video=video, output_type=output_type)
         # return CogVideoXPipelineOutput(frames=video)
     
-        # _, tracking_image_latents = self.prepare_latents(
-        #     tracking_image,
-        #     batch_size * num_videos_per_prompt,
-        #     latent_channels,
-        #     num_frames,
-        #     height,
-        #     width,
-        #     prompt_embeds.dtype,
-        #     device,
-        #     generator,
-        #     latents=None,
-        # )
-        # del tracking_image
-        # tracking_image_latents = tracking_image
-        # tracking_image_latents = torch.cat([tracking_image_latents, latent_padding], dim=1)
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -756,14 +700,18 @@ class CogVideoXImageToVideoPipelineTracking(CogVideoXImageToVideoPipeline, Diffu
 
                 # latent_image_input = torch.cat([image_latents] * 2) if do_classifier_free_guidance else image_latents
                 # latent_model_input = torch.cat([latent_model_input, latent_image_input], dim=2)
-                del latent_image_input
+                # del latent_image_input
 
                 # Handle tracking maps
                 if tracking_maps is not None:
+                    # tracking_maps_uncond = torch.zeros_like(tracking_maps)
                     # latents_tracking_image = torch.cat([tracking_image_latents] * 2) if do_classifier_free_guidance else tracking_image_latents
+
                     tracking_maps_input = torch.cat([tracking_maps] * 2) if do_classifier_free_guidance else tracking_maps
+                    # tracking_maps_input = torch.cat([tracking_maps, tracking_maps_uncond], dim=0) if do_classifier_free_guidance else tracking_maps
+
                     # tracking_maps_input = torch.cat([tracking_maps_input, latents_tracking_image], dim=2)
-                    del latents_tracking_image
+                    # del latents_tracking_image
                 else:
                     tracking_maps_input = None
                     

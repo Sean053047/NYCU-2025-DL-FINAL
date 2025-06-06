@@ -76,6 +76,7 @@ def generate_video(
         # pipe = CogVideoXImageToVideoPipelineTracking.from_pretrained(model_path, torch_dtype=dtype)
         transformer = CogVideoXTransformer3DModelTracking.from_pretrained(
             transformer_path,
+            # model_path,
             subfolder="transformer",
             torch_dtype=dtype
         )
@@ -156,26 +157,31 @@ def generate_video(
         # tracking_maps = tracking_maps.to(device=device, dtype=dtype)
         # tracking_first_frame = tracking_maps[0:1]  # Get first frame as [1, C, H, W]
         # height, width = tracking_first_frame.shape[2], tracking_first_frame.shape[3]
+        tracking_path = tracking_path.split(".")[0]+".pt"
+        tracking_maps = torch.load(tracking_path, map_location=device).unsqueeze(0)  # [1, F, C, H, W]
+        tracking_maps = tracking_maps * vae.config.scaling_factor
+        tracking_maps = tracking_maps.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
+        
+        # video_reader = decord.VideoReader(uri=tracking_path)
+        # tracking_maps = torch.from_numpy(video_reader.get_batch(list(range(0, len(video_reader), len(video_reader) // num_frames))).asnumpy())
+        # del video_reader
 
-        video_reader = decord.VideoReader(uri=tracking_path)
-        tracking_maps = torch.from_numpy(video_reader.get_batch(list(range(0, len(video_reader), len(video_reader) // num_frames))).asnumpy())
-        del video_reader
-
-        tracking_maps = tracking_maps[:num_frames].float()
-        tracking_maps = tracking_maps.permute(0, 3, 1, 2).contiguous()  # [T, H, W, C] -> [T, C, H, W]
-        tracking_maps = torch.stack([resize(frame, (480, 768)) for frame in tracking_maps], dim=0)  # Resize to 480x768
-        tracking_maps = torch.stack([video_transforms(frame) for frame in tracking_maps], dim=0)  # Normalize
-        tracking_maps = tracking_maps.unsqueeze(0).permute(0, 2, 1, 3, 4).to(device=device, dtype=dtype) # [B, C, T, H, W]
+        # tracking_maps = tracking_maps[:num_frames].float()
+        # tracking_maps = tracking_maps.permute(0, 3, 1, 2).contiguous()  # [T, H, W, C] -> [T, C, H, W]
+        # tracking_maps = torch.stack([resize(frame, (480, 768)) for frame in tracking_maps], dim=0)  # Resize to 480x768
+        # tracking_maps = torch.stack([video_transforms(frame) for frame in tracking_maps], dim=0)  # Normalize
+        # tracking_maps = tracking_maps.unsqueeze(0).permute(0, 2, 1, 3, 4).to(device=device, dtype=dtype) # [B, C, T, H, W]
         tracking_first_frame = tracking_maps[:, :, :1].clone().to(device=device, dtype=dtype)
-        image = image.unsqueeze(0).to(device=device, dtype=dtype).permute(0, 2, 1, 3, 4)
-        with torch.no_grad():
-            tracking_maps = vae.encode(tracking_maps).latent_dist.sample() * vae.config.scaling_factor
-            tracking_first_frame = vae.encode(tracking_first_frame).latent_dist.sample() * vae.config.scaling_factor
-            image = vae.encode(image).latent_dist.sample() * vae.config.scaling_factor
-            tracking_maps = tracking_maps.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
-            tracking_first_frame = tracking_first_frame.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
-            image = image.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
-        print(tracking_maps.shape, tracking_first_frame.shape, image.shape)
+        # image = image.unsqueeze(0).to(device=device, dtype=dtype).permute(0, 2, 1, 3, 4)
+        # with torch.no_grad():
+            
+        #     tracking_maps = vae.encode(tracking_maps).latent_dist.sample() * vae.config.scaling_factor
+        #     # tracking_first_frame = vae.encode(tracking_first_frame).latent_dist.sample() * vae.config.scaling_factor
+        #     # image = vae.encode(image).latent_dist.sample() * vae.config.scaling_factor
+        #     tracking_maps = tracking_maps.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
+        #     # tracking_first_frame = tracking_first_frame.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
+        #     # image = image.permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
+        # # print(tracking_maps.shape, tracking_first_frame.shape, image.shape)
        
     elif tracking_video is not None:
         tracking_maps = tracking_video.float() / 255.0 # [T, C, H, W]
@@ -269,7 +275,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dtype", type=str, default="bfloat16", help="The data type for computation (e.g., 'float16' or 'bfloat16')"
     )
-    parser.addargument("--num_frames", type=int, default=52, help="Number of frames in the generated video")
+    parser.add_argument("--num_frames", type=int, default=81, help="Number of frames in the generated video")
     parser.add_argument("--seed", type=int, default=42, help="The seed for reproducibility")
     parser.add_argument("--tracking_path", type=str, default=None, help="The path of the tracking maps to be used")
 
